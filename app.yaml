@@ -7,3 +7,6 @@ handlers:
 - url: /.*
   script: imbagger.py
   login: admin
+
+inbound_services:
+- xmpp_message
