@@ -4,7 +4,10 @@ from google.appengine.ext import webapp
 from google.appengine.ext.webapp.util import run_wsgi_app
 from google.appengine.api import xmpp
 from google.appengine.ext.webapp import template
-import logging
+from google.appengine.ext import db
+
+class IMPermission(db.Model):
+    address = db.StringProperty(required=False)
 
 class SendMessageHandler(webapp.RequestHandler):
     def get(self):
@@ -12,25 +15,29 @@ class SendMessageHandler(webapp.RequestHandler):
         self.response.out.write(template.render(path, locals()))
         
     def post(self):
-        user_address = self.request.get('email')
+        to = self.request.get('to')
         chat_message_sent = False
 
-        if not xmpp.get_presence(user_address): #todo, not really a good way to decide to invite, just happens to work first time.
-            status_code_from_invite = xmpp.send_invite(user_address)  # only need to do this once really.
-        
-        if xmpp.get_presence(user_address):
-            msg = "What is your favorite color?"
-            status_code_msg = xmpp.send_message(user_address, msg)
-            chat_message_sent = (status_code_msg != xmpp.NO_ERROR)
-        
-            if not chat_message_sent:
-                logging.error('Could not send message to %s.  status_code=%s' % (user_address, status_code_msg))
-        else:
-            logging.error('%s not online' % user_address)
-        
+
         print 'Content-Type: text/plain'
         print ''
-        print 'Sent.'
+
+        if not IMPermission.gql('WHERE address = :1', to).get():
+            xmpp.send_invite(to)
+            print 'requesting permission.... accept it, then reload this page to send message.'
+            IMPermission(address=to).put()
+        else:
+            if xmpp.get_presence(to):
+                status_code_msg = xmpp.send_message(to, 'What is your favorite color?')
+                chat_message_sent = (status_code_msg == xmpp.NO_ERROR)
+
+                if chat_message_sent == False:
+                    print "Couldn't send it"
+                else:
+                    print 'Sent.'
+            else:
+                print '%s not online.  Remember - this has to be running on gae servers and that user must be online for this to work.' % to
+                
         
 
 class InboundMessageHandler(webapp.RequestHandler):
